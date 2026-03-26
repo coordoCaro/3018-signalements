@@ -112,6 +112,16 @@ app.command('/signal', async ({ ack, body, client }) => {
   });
 });
 
+// Fonction utilitaire pour construire le texte de statut
+function texteStatut(statut) {
+  const descriptions = {
+    'ouvert':     '🟡 Ouvert — dossier ouvert, en cours de rédaction',
+    'a_valider':  '🟣 À valider — dossier constitué, en relecture dirco',
+    'envoye':     '🟢 Envoyé — dossier transmis, cas clôturé',
+  };
+  return descriptions[statut] || '🟡 Ouvert — dossier ouvert, en cours de rédaction';
+}
+
 app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   await ack();
 
@@ -133,71 +143,7 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   const message = await client.chat.postMessage({
     channel: channelId,
     text: `Nouveau dossier ${numero}`,
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `🗂️ *Dossier ${numero}*\n*Statut :* 🟡 Ouvert`,
-        },
-      },
-      { type: 'divider' },
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: `*Écoutant :*\n${ecoutant}` },
-          { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
-          { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
-          { type: 'mrkdwn', text: `*Téléphone :*\n${telephone}` },
-          { type: 'mrkdwn', text: `*Cadre(s) informé(s) :*\n${cadres}` },
-          { type: 'mrkdwn', text: `*Ouvert le :*\n${now}` },
-        ],
-      },
-      {
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*Résumé :*\n${resume}` },
-      },
-      { type: 'divider' },
-      {
-        type: 'actions',
-        block_id: 'actions_statut',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '🟣 À valider — dirco' },
-            action_id: 'statut_a_valider',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '🟢 Envoyé' },
-            action_id: 'statut_envoye',
-            style: 'primary',
-          },
-        ],
-      },
-      {
-        type: 'actions',
-        block_id: 'actions_tags',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '⏳ En attente FDS' },
-            action_id: 'tag_fds',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '+ Rappel' },
-            action_id: 'tag_rappel_ajouter',
-          },
-        ],
-      },
-      {
-        type: 'context',
-        elements: [
-          { type: 'mrkdwn', text: `Dossier ouvert par <@${user}>` },
-        ],
-      },
-    ],
+    blocks: buildBlocks({ numero, ecoutant, canal, mail, telephone, cadres, resume, user, now, statut: 'ouvert', tagFds: 'attente', tagRappel: 'absent' }),
   });
 
   await client.pins.add({
@@ -212,144 +158,201 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   });
 });
 
-// Statuts
-const statuts = {
-  statut_a_valider: { emoji: '🟣', texte: 'À valider — dirco' },
-  statut_envoye:    { emoji: '🟢', texte: 'Envoyé' },
-};
+// Fonction qui reconstruit tous les blocs de la fiche
+function buildBlocks({ numero, ecoutant, canal, mail, telephone, cadres, resume, user, now, statut, tagFds, tagRappel }) {
+  const tagElements = [
+    {
+      type: 'button',
+      text: { type: 'plain_text', text: tagFds === 'attente' ? '⏳ En attente FDS' : '✅ FDS reçu' },
+      action_id: 'tag_fds',
+    },
+  ];
 
-Object.entries(statuts).forEach(([actionId, statut]) => {
+  if (tagRappel === 'absent') {
+    tagElements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: '+ Rappel' },
+      action_id: 'tag_rappel_ajouter',
+    });
+  } else {
+    tagElements.push({
+      type: 'button',
+      text: { type: 'plain_text', text: tagRappel === 'faire' ? '📞 Rappel à faire' : '✅ Rappel fait' },
+      action_id: 'tag_rappel',
+    });
+  }
+
+  return [
+    {
+      type: 'section',
+      block_id: 'bloc_statut',
+      text: {
+        type: 'mrkdwn',
+        text: `🗂️ *Dossier ${numero}*\n*Statut :* ${texteStatut(statut)}\n_Écoutant : ${ecoutant} · Ouvert le ${now}_`,
+      },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
+        { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
+        { type: 'mrkdwn', text: `*Téléphone :*\n${telephone}` },
+        { type: 'mrkdwn', text: `*Cadre(s) informé(s) :*\n${cadres}` },
+      ],
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Résumé :*\n${resume}` },
+    },
+    { type: 'divider' },
+    {
+      type: 'actions',
+      block_id: 'actions_statut',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🟡 Ouvert' },
+          action_id: 'statut_ouvert',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🟣 À valider' },
+          action_id: 'statut_a_valider',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🟢 Envoyé' },
+          action_id: 'statut_envoye',
+          style: 'primary',
+        },
+      ],
+    },
+    {
+      type: 'actions',
+      block_id: 'actions_tags',
+      elements: tagElements,
+    },
+    {
+      type: 'context',
+      elements: [
+        { type: 'mrkdwn', text: `Dossier ouvert par <@${user}>` },
+      ],
+    },
+  ];
+}
+
+// Fonction qui extrait les infos depuis les blocs existants
+function extraireInfos(blocks) {
+  const blocStatut = blocks.find(b => b.block_id === 'bloc_statut');
+  const text = blocStatut?.text?.text || '';
+
+  const numero = (text.match(/Dossier (.+?)\*/) || [])[1] || '';
+  const ecoutant = (text.match(/Écoutant : (.+?) ·/) || [])[1] || '';
+  const now = (text.match(/Ouvert le (.+?)_/) || [])[1] || '';
+
+  const fieldsBlock = blocks.find(b => b.fields);
+  const fields = fieldsBlock?.fields || [];
+  const canal = (fields[0]?.text || '').replace('*Canal :*\n', '');
+  const mail = (fields[1]?.text || '').replace('*Mail contact :*\n', '');
+  const telephone = (fields[2]?.text || '').replace('*Téléphone :*\n', '');
+  const cadres = (fields[3]?.text || '').replace('*Cadre(s) informé(s) :*\n', '');
+
+  const resumeBlock = blocks.find(b => b.text?.text?.startsWith('*Résumé :*'));
+  const resume = (resumeBlock?.text?.text || '').replace('*Résumé :*\n', '');
+
+  const contextBlock = blocks.find(b => b.type === 'context');
+  const user = (contextBlock?.elements?.[0]?.text || '').replace('Dossier ouvert par ', '').replace('<@', '').replace('>', '');
+
+  const tagsBlock = blocks.find(b => b.block_id === 'actions_tags');
+  const tagFdsEl = tagsBlock?.elements?.find(e => e.action_id === 'tag_fds');
+  const tagFds = tagFdsEl?.text?.text?.includes('✅') ? 'recu' : 'attente';
+
+  const tagRappelEl = tagsBlock?.elements?.find(e => ['tag_rappel', 'tag_rappel_ajouter'].includes(e.action_id));
+  let tagRappel = 'absent';
+  if (tagRappelEl?.action_id === 'tag_rappel') {
+    tagRappel = tagRappelEl.text.text.includes('✅') ? 'fait' : 'faire';
+  }
+
+  return { numero, ecoutant, canal, mail, telephone, cadres, resume, user, now, tagFds, tagRappel };
+}
+
+// Gestion des statuts
+['statut_ouvert', 'statut_a_valider', 'statut_envoye'].forEach((actionId) => {
   app.action(actionId, async ({ ack, body, client }) => {
     await ack();
     const message = body.message;
-    const user = body.user.id;
-
-    const updatedBlocks = message.blocks.map((block) => {
-      if (block.type === 'section' && block.text?.text?.includes('Statut :')) {
-        return {
-          ...block,
-          text: {
-            ...block.text,
-            text: block.text.text.replace(
-              /\*Statut :\*.*/,
-              `*Statut :* ${statut.emoji} ${statut.texte}`
-            ),
-          },
-        };
-      }
-      return block;
-    });
+    const statutMap = { statut_ouvert: 'ouvert', statut_a_valider: 'a_valider', statut_envoye: 'envoye' };
+    const statut = statutMap[actionId];
+    const infos = extraireInfos(message.blocks);
 
     await client.chat.update({
       channel: body.channel.id,
       ts: message.ts,
-      blocks: updatedBlocks,
+      blocks: buildBlocks({ ...infos, statut }),
       text: message.text,
     });
 
     if (actionId === 'statut_envoye') {
       try {
-        await client.pins.remove({
-          channel: body.channel.id,
-          timestamp: message.ts,
-        });
+        await client.pins.remove({ channel: body.channel.id, timestamp: message.ts });
+      } catch (e) {}
+    } else if (actionId === 'statut_ouvert') {
+      try {
+        await client.pins.add({ channel: body.channel.id, timestamp: message.ts });
       } catch (e) {}
     }
   });
 });
 
-// Tag FDS — bascule entre En attente et Reçu
+// Tag FDS
 app.action('tag_fds', async ({ ack, body, client }) => {
   await ack();
   const message = body.message;
+  const infos = extraireInfos(message.blocks);
+  const statut = message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('À valider') ? 'a_valider'
+    : message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('Envoyé') ? 'envoye' : 'ouvert';
 
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_fds') {
-            const isAttendu = el.text.text === '⏳ En attente FDS';
-            return {
-              ...el,
-              text: { type: 'plain_text', text: isAttendu ? '✅ FDS reçu' : '⏳ En attente FDS' },
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
+  const newTagFds = infos.tagFds === 'attente' ? 'recu' : 'attente';
 
   await client.chat.update({
     channel: body.channel.id,
     ts: message.ts,
-    blocks: updatedBlocks,
+    blocks: buildBlocks({ ...infos, statut, tagFds: newTagFds }),
     text: message.text,
   });
 });
 
-// Bouton + Rappel — fait apparaître le tag rappel
+// Bouton + Rappel
 app.action('tag_rappel_ajouter', async ({ ack, body, client }) => {
   await ack();
   const message = body.message;
-
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_rappel_ajouter') {
-            return {
-              ...el,
-              text: { type: 'plain_text', text: '📞 Rappel à faire' },
-              action_id: 'tag_rappel',
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
+  const infos = extraireInfos(message.blocks);
+  const statut = message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('À valider') ? 'a_valider'
+    : message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('Envoyé') ? 'envoye' : 'ouvert';
 
   await client.chat.update({
     channel: body.channel.id,
     ts: message.ts,
-    blocks: updatedBlocks,
+    blocks: buildBlocks({ ...infos, statut, tagRappel: 'faire' }),
     text: message.text,
   });
 });
 
-// Tag Rappel — bascule entre À faire et Fait
+// Tag Rappel
 app.action('tag_rappel', async ({ ack, body, client }) => {
   await ack();
   const message = body.message;
+  const infos = extraireInfos(message.blocks);
+  const statut = message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('À valider') ? 'a_valider'
+    : message.blocks.find(b => b.block_id === 'bloc_statut')?.text?.text?.includes('Envoyé') ? 'envoye' : 'ouvert';
 
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_rappel') {
-            const isFaire = el.text.text === '📞 Rappel à faire';
-            return {
-              ...el,
-              text: { type: 'plain_text', text: isFaire ? '✅ Rappel fait' : '📞 Rappel à faire' },
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
+  const newTagRappel = infos.tagRappel === 'faire' ? 'fait' : 'faire';
 
   await client.chat.update({
     channel: body.channel.id,
     ts: message.ts,
-    blocks: updatedBlocks,
+    blocks: buildBlocks({ ...infos, statut, tagRappel: newTagRappel }),
     text: message.text,
   });
 });
