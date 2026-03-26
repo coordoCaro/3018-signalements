@@ -275,7 +275,7 @@ app.action('tag_fds', async ({ ack, body, client }) => {
         ...block,
         elements: block.elements.map((el) => {
           if (el.action_id === 'tag_fds') {
-            const isAttendu = el.text.text === '⏳ En attente FDS';
+            const isAttendu = el.text.text.includes('attente');
             return {
               ...el,
               text: { type: 'plain_text', text: isAttendu ? '✅ FDS reçu' : '⏳ En attente FDS' },
@@ -337,7 +337,7 @@ app.action('tag_rappel', async ({ ack, body, client }) => {
         ...block,
         elements: block.elements.map((el) => {
           if (el.action_id === 'tag_rappel') {
-            const isFaire = el.text.text === '📞 Rappel à faire';
+            const isFaire = el.text.text.includes('faire');
             return {
               ...el,
               text: { type: 'plain_text', text: isFaire ? '✅ Rappel fait' : '📞 Rappel à faire' },
