@@ -182,13 +182,19 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
       },
       {
         type: 'actions',
-        block_id: 'actions_tags',
+        block_id: 'actions_fds',
         elements: [
           {
             type: 'button',
             text: { type: 'plain_text', text: '⏳ En attente FDS' },
             action_id: 'tag_fds',
           },
+        ],
+      },
+      {
+        type: 'actions',
+        block_id: 'actions_rappel',
+        elements: [
           {
             type: 'button',
             text: { type: 'plain_text', text: '+ Rappel' },
@@ -264,7 +270,7 @@ app.action('tag_fds', async ({ ack, body, client }) => {
   const message = body.message;
 
   const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
+    if (block.block_id === 'actions_fds') {
       return {
         ...block,
         elements: block.elements.map((el) => {
@@ -295,7 +301,7 @@ app.action('tag_rappel_ajouter', async ({ ack, body, client }) => {
   const message = body.message;
 
   const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
+    if (block.block_id === 'actions_rappel') {
       return {
         ...block,
         elements: block.elements.map((el) => {
@@ -326,7 +332,7 @@ app.action('tag_rappel', async ({ ack, body, client }) => {
   const message = body.message;
 
   const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_tags') {
+    if (block.block_id === 'actions_rappel') {
       return {
         ...block,
         elements: block.elements.map((el) => {
