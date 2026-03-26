@@ -176,7 +176,6 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
             type: 'button',
             text: { type: 'plain_text', text: '🟢 Envoyé' },
             action_id: 'statut_envoye',
-            style: 'primary',
           },
         ],
       },
