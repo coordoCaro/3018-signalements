@@ -56,11 +56,23 @@ app.command('/signal', async ({ ack, body, client }) => {
         {
           type: 'input',
           block_id: 'mail_contact',
+          optional: true,
           label: { type: 'plain_text', text: 'Mail de contact de la victime' },
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
             placeholder: { type: 'plain_text', text: 'adresse@exemple.com' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'telephone',
+          optional: true,
+          label: { type: 'plain_text', text: 'Téléphone de contact' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : 06 12 34 56 78' },
           },
         },
         {
