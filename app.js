@@ -7,7 +7,6 @@ const app = new App({
   port: process.env.PORT || 3000,
 });
 
-// Commande /signal — ouvre le formulaire modal
 app.command('/signal', async ({ ack, body, client }) => {
   await ack();
   await client.views.open({
@@ -77,6 +76,24 @@ app.command('/signal', async ({ ack, body, client }) => {
         },
         {
           type: 'input',
+          block_id: 'cadres',
+          optional: true,
+          label: { type: 'plain_text', text: 'Cadre(s) informé(s)' },
+          element: {
+            type: 'multi_static_select',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Sélectionnez un ou plusieurs cadres' },
+            options: [
+              { text: { type: 'plain_text', text: 'Simon' }, value: 'Simon' },
+              { text: { type: 'plain_text', text: 'Diane' }, value: 'Diane' },
+              { text: { type: 'plain_text', text: 'Caroline' }, value: 'Caroline' },
+              { text: { type: 'plain_text', text: 'Pauline' }, value: 'Pauline' },
+              { text: { type: 'plain_text', text: 'Manu' }, value: 'Manu' },
+            ],
+          },
+        },
+        {
+          type: 'input',
           block_id: 'resume',
           label: { type: 'plain_text', text: 'Résumé de la situation' },
           element: {
@@ -87,7 +104,7 @@ app.command('/signal', async ({ ack, body, client }) => {
           },
           hint: {
             type: 'plain_text',
-            text: '⚠️ Ne pas inclure de nom, prénom, adresse, URL, identifiants ou toute donnée permettant d\'identifier la victime.',
+            text: "⚠️ Ne pas inclure de nom, prénom, adresse, URL, identifiants ou toute donnée permettant d'identifier la victime.",
           },
         },
       ],
@@ -95,7 +112,6 @@ app.command('/signal', async ({ ack, body, client }) => {
   });
 });
 
-// Soumission du formulaire — crée la fiche dans le canal
 app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   await ack();
 
@@ -103,11 +119,15 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   const numero = vals.numero_dossier.valeur.value;
   const ecoutant = vals.ecoutant.valeur.value;
   const canal = vals.canal.valeur.selected_option.text.text;
-  const mail = vals.mail_contact.valeur.value;
+  const mail = vals.mail_contact.valeur.value || 'Non renseigné';
+  const telephone = vals.telephone.valeur.value || 'Non renseigné';
+  const cadresRaw = vals.cadres.valeur.selected_options;
+  const cadres = cadresRaw && cadresRaw.length > 0
+    ? cadresRaw.map(o => o.value).join(', ')
+    : 'Non renseigné';
   const resume = vals.resume.valeur.value;
   const user = body.user.id;
   const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-
   const channelId = process.env.SLACK_CHANNEL_ID;
 
   const message = await client.chat.postMessage({
@@ -118,22 +138,24 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*🗂️ Dossier ${numero}*\n*Statut :* 🟡 En attente du mail formulaire`,
+          text: `🗂️ *Dossier ${numero}*\n*Statut :* 🟡 Ouvert`,
         },
       },
       { type: 'divider' },
       {
         type: 'section',
         fields: [
-          { type: 'mrkdwn', text: `*👤 Écoutant :*\n${ecoutant}` },
-          { type: 'mrkdwn', text: `*📡 Canal :*\n${canal}` },
-          { type: 'mrkdwn', text: `*📧 Mail contact :*\n${mail}` },
-          { type: 'mrkdwn', text: `*🕐 Ouvert le :*\n${now}` },
+          { type: 'mrkdwn', text: `*Écoutant :*\n${ecoutant}` },
+          { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
+          { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
+          { type: 'mrkdwn', text: `*Téléphone :*\n${telephone}` },
+          { type: 'mrkdwn', text: `*Cadre(s) informé(s) :*\n${cadres}` },
+          { type: 'mrkdwn', text: `*Ouvert le :*\n${now}` },
         ],
       },
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: `*📝 Résumé :*\n${resume}` },
+        text: { type: 'mrkdwn', text: `*Résumé :*\n${resume}` },
       },
       { type: 'divider' },
       {
@@ -142,25 +164,41 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
         elements: [
           {
             type: 'button',
-            text: { type: 'plain_text', text: '📨 Mail reçu' },
-            action_id: 'statut_mail_recu',
+            text: { type: 'plain_text', text: '🔵 Dossier en cours' },
+            action_id: 'statut_en_cours',
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '🟣 À valider — dirco' },
+            action_id: 'statut_a_valider',
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '🟢 Envoyé' },
+            action_id: 'statut_envoye',
             style: 'primary',
           },
           {
             type: 'button',
-            text: { type: 'plain_text', text: '✏️ Art. 40 rédigé' },
-            action_id: 'statut_redige',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '✅ Validé cadre' },
-            action_id: 'statut_valide',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '📤 Envoyé procureur' },
-            action_id: 'statut_envoye',
+            text: { type: 'plain_text', text: '⚫ Clôturé' },
+            action_id: 'statut_cloture',
             style: 'danger',
+          },
+        ],
+      },
+      {
+        type: 'actions',
+        block_id: 'actions_tags',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '☐ En attente du FDS' },
+            action_id: 'tag_fds',
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '☐ Rappel à effectuer' },
+            action_id: 'tag_rappel',
           },
         ],
       },
@@ -173,26 +211,29 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
     ],
   });
 
-  // Ouvre un fil de discussion automatiquement
+  // Épingler automatiquement à la création
+  await client.pins.add({
+    channel: channelId,
+    timestamp: message.ts,
+  });
+
   await client.chat.postMessage({
     channel: channelId,
     thread_ts: message.ts,
-    text: `📁 Fil de suivi du dossier *${numero}*\nUtilisez ce fil pour les échanges et mises à jour sur ce dossier.`,
+    text: `📁 Fil de suivi du dossier *${numero}*\nUtilisez ce fil pour les échanges et mises à jour.`,
   });
 });
 
-// Gestion des boutons de statut
 const statuts = {
-  statut_mail_recu:  { emoji: '🟠', texte: 'Mail formulaire reçu — en attente de rédaction Art. 40' },
-  statut_redige:     { emoji: '🔵', texte: 'Art. 40 rédigé — en attente de validation cadre' },
-  statut_valide:     { emoji: '🟣', texte: 'Validé par le cadre — en attente d\'envoi au procureur' },
-  statut_envoye:     { emoji: '🟢', texte: 'Envoyé au procureur ✓' },
+  statut_en_cours:  { emoji: '🔵', texte: 'Dossier en cours' },
+  statut_a_valider: { emoji: '🟣', texte: 'À valider — dirco' },
+  statut_envoye:    { emoji: '🟢', texte: 'Envoyé' },
+  statut_cloture:   { emoji: '⚫', texte: 'Clôturé' },
 };
 
 Object.entries(statuts).forEach(([actionId, statut]) => {
   app.action(actionId, async ({ ack, body, client }) => {
     await ack();
-
     const message = body.message;
     const user = body.user.id;
     const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
@@ -220,10 +261,68 @@ Object.entries(statuts).forEach(([actionId, statut]) => {
       text: message.text,
     });
 
+    // Désépingler automatiquement si clôturé
+    if (actionId === 'statut_cloture') {
+      try {
+        await client.pins.remove({
+          channel: body.channel.id,
+          timestamp: message.ts,
+        });
+      } catch (e) {
+        // Déjà désépinglé, on ignore
+      }
+    }
+
     await client.chat.postMessage({
       channel: body.channel.id,
       thread_ts: message.ts,
       text: `${statut.emoji} Statut mis à jour par <@${user}> le ${now} : *${statut.texte}*`,
+    });
+  });
+});
+
+const tagsConfig = {
+  tag_fds:    { on: '✅ En attente du FDS',  off: '☐ En attente du FDS' },
+  tag_rappel: { on: '✅ Rappel à effectuer', off: '☐ Rappel à effectuer' },
+};
+
+Object.entries(tagsConfig).forEach(([actionId, tag]) => {
+  app.action(actionId, async ({ ack, body, client }) => {
+    await ack();
+    const message = body.message;
+    const user = body.user.id;
+    const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+
+    const updatedBlocks = message.blocks.map((block) => {
+      if (block.block_id === 'actions_tags') {
+        return {
+          ...block,
+          elements: block.elements.map((el) => {
+            if (el.action_id === actionId) {
+              const isOn = el.text.text === tag.on;
+              return {
+                ...el,
+                text: { type: 'plain_text', text: isOn ? tag.off : tag.on },
+              };
+            }
+            return el;
+          }),
+        };
+      }
+      return block;
+    });
+
+    await client.chat.update({
+      channel: body.channel.id,
+      ts: message.ts,
+      blocks: updatedBlocks,
+      text: message.text,
+    });
+
+    await client.chat.postMessage({
+      channel: body.channel.id,
+      thread_ts: message.ts,
+      text: `🏷️ Tag mis à jour par <@${user}> le ${now}`,
     });
   });
 });
