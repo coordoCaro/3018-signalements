@@ -164,11 +164,6 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
         elements: [
           {
             type: 'button',
-            text: { type: 'plain_text', text: '🔵 Dossier en cours' },
-            action_id: 'statut_en_cours',
-          },
-          {
-            type: 'button',
             text: { type: 'plain_text', text: '🟣 À valider — dirco' },
             action_id: 'statut_a_valider',
           },
@@ -178,12 +173,6 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
             action_id: 'statut_envoye',
             style: 'primary',
           },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '⚫ Clôturé' },
-            action_id: 'statut_cloture',
-            style: 'danger',
-          },
         ],
       },
       {
@@ -192,13 +181,13 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
         elements: [
           {
             type: 'button',
-            text: { type: 'plain_text', text: '☐ En attente du FDS' },
+            text: { type: 'plain_text', text: '⏳ En attente FDS' },
             action_id: 'tag_fds',
           },
           {
             type: 'button',
-            text: { type: 'plain_text', text: '☐ Rappel à effectuer' },
-            action_id: 'tag_rappel',
+            text: { type: 'plain_text', text: '+ Rappel' },
+            action_id: 'tag_rappel_ajouter',
           },
         ],
       },
@@ -211,7 +200,6 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
     ],
   });
 
-  // Épingler automatiquement à la création
   await client.pins.add({
     channel: channelId,
     timestamp: message.ts,
@@ -220,15 +208,14 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   await client.chat.postMessage({
     channel: channelId,
     thread_ts: message.ts,
-    text: `📁 Fil de suivi du dossier *${numero}*\nUtilisez ce fil pour les échanges et mises à jour.`,
+    text: `📁 Dossier *${numero}* ouvert par <@${user}> le ${now}`,
   });
 });
 
+// Statuts
 const statuts = {
-  statut_en_cours:  { emoji: '🔵', texte: 'Dossier en cours' },
   statut_a_valider: { emoji: '🟣', texte: 'À valider — dirco' },
   statut_envoye:    { emoji: '🟢', texte: 'Envoyé' },
-  statut_cloture:   { emoji: '⚫', texte: 'Clôturé' },
 };
 
 Object.entries(statuts).forEach(([actionId, statut]) => {
@@ -236,7 +223,6 @@ Object.entries(statuts).forEach(([actionId, statut]) => {
     await ack();
     const message = body.message;
     const user = body.user.id;
-    const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
 
     const updatedBlocks = message.blocks.map((block) => {
       if (block.type === 'section' && block.text?.text?.includes('Statut :')) {
@@ -261,69 +247,110 @@ Object.entries(statuts).forEach(([actionId, statut]) => {
       text: message.text,
     });
 
-    // Désépingler automatiquement si clôturé
-    if (actionId === 'statut_cloture') {
+    if (actionId === 'statut_envoye') {
       try {
         await client.pins.remove({
           channel: body.channel.id,
           timestamp: message.ts,
         });
-      } catch (e) {
-        // Déjà désépinglé, on ignore
-      }
+      } catch (e) {}
     }
-
-    await client.chat.postMessage({
-      channel: body.channel.id,
-      thread_ts: message.ts,
-      text: `${statut.emoji} Statut mis à jour par <@${user}> le ${now} : *${statut.texte}*`,
-    });
   });
 });
 
-const tagsConfig = {
-  tag_fds:    { on: '✅ En attente du FDS',  off: '☐ En attente du FDS' },
-  tag_rappel: { on: '✅ Rappel à effectuer', off: '☐ Rappel à effectuer' },
-};
+// Tag FDS — bascule entre En attente et Reçu
+app.action('tag_fds', async ({ ack, body, client }) => {
+  await ack();
+  const message = body.message;
 
-Object.entries(tagsConfig).forEach(([actionId, tag]) => {
-  app.action(actionId, async ({ ack, body, client }) => {
-    await ack();
-    const message = body.message;
-    const user = body.user.id;
-    const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+  const updatedBlocks = message.blocks.map((block) => {
+    if (block.block_id === 'actions_tags') {
+      return {
+        ...block,
+        elements: block.elements.map((el) => {
+          if (el.action_id === 'tag_fds') {
+            const isAttendu = el.text.text === '⏳ En attente FDS';
+            return {
+              ...el,
+              text: { type: 'plain_text', text: isAttendu ? '✅ FDS reçu' : '⏳ En attente FDS' },
+            };
+          }
+          return el;
+        }),
+      };
+    }
+    return block;
+  });
 
-    const updatedBlocks = message.blocks.map((block) => {
-      if (block.block_id === 'actions_tags') {
-        return {
-          ...block,
-          elements: block.elements.map((el) => {
-            if (el.action_id === actionId) {
-              const isOn = el.text.text === tag.on;
-              return {
-                ...el,
-                text: { type: 'plain_text', text: isOn ? tag.off : tag.on },
-              };
-            }
-            return el;
-          }),
-        };
-      }
-      return block;
-    });
+  await client.chat.update({
+    channel: body.channel.id,
+    ts: message.ts,
+    blocks: updatedBlocks,
+    text: message.text,
+  });
+});
 
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: message.ts,
-      blocks: updatedBlocks,
-      text: message.text,
-    });
+// Bouton + Rappel — fait apparaître le tag rappel
+app.action('tag_rappel_ajouter', async ({ ack, body, client }) => {
+  await ack();
+  const message = body.message;
 
-    await client.chat.postMessage({
-      channel: body.channel.id,
-      thread_ts: message.ts,
-      text: `🏷️ Tag mis à jour par <@${user}> le ${now}`,
-    });
+  const updatedBlocks = message.blocks.map((block) => {
+    if (block.block_id === 'actions_tags') {
+      return {
+        ...block,
+        elements: block.elements.map((el) => {
+          if (el.action_id === 'tag_rappel_ajouter') {
+            return {
+              ...el,
+              text: { type: 'plain_text', text: '📞 Rappel à faire' },
+              action_id: 'tag_rappel',
+            };
+          }
+          return el;
+        }),
+      };
+    }
+    return block;
+  });
+
+  await client.chat.update({
+    channel: body.channel.id,
+    ts: message.ts,
+    blocks: updatedBlocks,
+    text: message.text,
+  });
+});
+
+// Tag Rappel — bascule entre À faire et Fait
+app.action('tag_rappel', async ({ ack, body, client }) => {
+  await ack();
+  const message = body.message;
+
+  const updatedBlocks = message.blocks.map((block) => {
+    if (block.block_id === 'actions_tags') {
+      return {
+        ...block,
+        elements: block.elements.map((el) => {
+          if (el.action_id === 'tag_rappel') {
+            const isFaire = el.text.text === '📞 Rappel à faire';
+            return {
+              ...el,
+              text: { type: 'plain_text', text: isFaire ? '✅ Rappel fait' : '📞 Rappel à faire' },
+            };
+          }
+          return el;
+        }),
+      };
+    }
+    return block;
+  });
+
+  await client.chat.update({
+    channel: body.channel.id,
+    ts: message.ts,
+    blocks: updatedBlocks,
+    text: message.text,
   });
 });
 
