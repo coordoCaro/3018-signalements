@@ -1,0 +1,13 @@
+{
+  "name": "3018-signalements",
+  "version": "1.0.0",
+  "description": "Bot Slack de suivi des signalements 3018",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.17.0",
+    "dotenv": "^16.3.1"
+  }
+}
