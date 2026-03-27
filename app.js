@@ -25,7 +25,7 @@ app.command('/signal', async ({ ack, body, client }) => {
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 3664' },
+            placeholder: { type: 'plain_text', text: 'Ex : 1234' },
           },
         },
         {
@@ -36,7 +36,7 @@ app.command('/signal', async ({ ack, body, client }) => {
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
+            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_NOM_1234' },
           },
         },
         {
