@@ -210,6 +210,17 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
         ],
       },
       {
+        type: 'actions',
+        block_id: 'actions_modifier',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: '✏️ Modifier le mail' },
+            action_id: 'modifier_mail',
+          },
+        ],
+      },
+      {
         type: 'context',
         elements: [
           { type: 'mrkdwn', text: `Dossier ouvert par <@${user}>` },
@@ -354,6 +365,81 @@ app.action('tag_rappel', async ({ ack, body, client }) => {
   await client.chat.update({
     channel: body.channel.id,
     ts: message.ts,
+    blocks: updatedBlocks,
+    text: message.text,
+  });
+});
+
+app.action('modifier_mail', async ({ ack, body, client }) => {
+  await ack();
+
+  const message = body.message;
+  const channelId = body.channel.id;
+  const messageTs = message.ts;
+
+  const champsBlock = message.blocks.find(b => b.fields);
+  const mailActuel = champsBlock?.fields?.find(f => f.text.includes('Mail contact'))?.text
+    .replace('*Mail contact :*\n', '') || '';
+
+  await client.views.open({
+    trigger_id: body.trigger_id,
+    view: {
+      type: 'modal',
+      callback_id: 'modifier_mail_submit',
+      private_metadata: JSON.stringify({ channelId, messageTs }),
+      title: { type: 'plain_text', text: 'Modifier le mail' },
+      submit: { type: 'plain_text', text: 'Mettre à jour' },
+      close: { type: 'plain_text', text: 'Annuler' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'nouveau_mail',
+          label: { type: 'plain_text', text: 'Mail de contact de la victime' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            initial_value: mailActuel === 'Non renseigné' ? '' : mailActuel,
+            placeholder: { type: 'plain_text', text: 'adresse@exemple.com' },
+          },
+        },
+      ],
+    },
+  });
+});
+
+app.view('modifier_mail_submit', async ({ ack, body, view, client }) => {
+  await ack();
+
+  const { channelId, messageTs } = JSON.parse(view.private_metadata);
+  const nouveauMail = view.state.values.nouveau_mail.valeur.value || 'Non renseigné';
+
+  const result = await client.conversations.history({
+    channel: channelId,
+    latest: messageTs,
+    limit: 1,
+    inclusive: true,
+  });
+
+  const message = result.messages[0];
+
+  const updatedBlocks = message.blocks.map((block) => {
+    if (block.fields) {
+      return {
+        ...block,
+        fields: block.fields.map((field) => {
+          if (field.text.includes('Mail contact')) {
+            return { ...field, text: `*Mail contact :*\n${nouveauMail}` };
+          }
+          return field;
+        }),
+      };
+    }
+    return block;
+  });
+
+  await client.chat.update({
+    channel: channelId,
+    ts: messageTs,
     blocks: updatedBlocks,
     text: message.text,
   });
