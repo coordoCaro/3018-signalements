@@ -25,7 +25,18 @@ app.command('/signal', async ({ ack, body, client }) => {
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 2026-047' },
+            placeholder: { type: 'plain_text', text: 'Ex : 3664' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'nom_dossier',
+          optional: true,
+          label: { type: 'plain_text', text: 'Nom du dossier serveur' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
           },
         },
         {
@@ -95,16 +106,11 @@ app.command('/signal', async ({ ack, body, client }) => {
         {
           type: 'input',
           block_id: 'resume',
-          label: { type: 'plain_text', text: 'Résumé de la situation' },
+          label: { type: 'plain_text', text: 'Type de situation (mots-clés)' },
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            multiline: true,
-            placeholder: { type: 'plain_text', text: 'Décrivez brièvement la situation...' },
-          },
-          hint: {
-            type: 'plain_text',
-            text: "⚠️ Ne pas inclure de nom, prénom, adresse, URL, identifiants ou toute donnée permettant d'identifier la victime.",
+            placeholder: { type: 'plain_text', text: 'Ex : harcèlement, mineur, réseaux sociaux' },
           },
         },
       ],
@@ -117,6 +123,7 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
 
   const vals = view.state.values;
   const numero = vals.numero_dossier.valeur.value;
+  const nomDossier = vals.nom_dossier.valeur.value || 'Non renseigné';
   const ecoutant = vals.ecoutant.valeur.value;
   const canal = vals.canal.valeur.selected_option.text.text;
   const mail = vals.mail_contact.valeur.value || 'Non renseigné';
@@ -145,6 +152,7 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
       {
         type: 'section',
         fields: [
+          { type: 'mrkdwn', text: `*Nom dossier serveur :*\n${nomDossier}` },
           { type: 'mrkdwn', text: `*Écoutant :*\n${ecoutant}` },
           { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
           { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
@@ -155,7 +163,7 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
       },
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: `*Résumé :*\n${resume}` },
+        text: { type: 'mrkdwn', text: `*Type de situation :*\n${resume}` },
       },
       { type: 'divider' },
       {
@@ -213,12 +221,6 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   await client.pins.add({
     channel: channelId,
     timestamp: message.ts,
-  });
-
-  await client.chat.postMessage({
-    channel: channelId,
-    thread_ts: message.ts,
-    text: `📁 Dossier *${numero}* ouvert par <@${user}> le ${now}`,
   });
 });
 
@@ -354,6 +356,116 @@ app.action('tag_rappel', async ({ ack, body, client }) => {
     ts: message.ts,
     blocks: updatedBlocks,
     text: message.text,
+  });
+});
+
+app.shortcut('nouveau_signalement', async ({ ack, shortcut, client }) => {
+  await ack();
+  await client.views.open({
+    trigger_id: shortcut.trigger_id,
+    view: {
+      type: 'modal',
+      callback_id: 'nouveau_dossier',
+      title: { type: 'plain_text', text: 'Nouveau signalement' },
+      submit: { type: 'plain_text', text: 'Créer le dossier' },
+      close: { type: 'plain_text', text: 'Annuler' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'numero_dossier',
+          label: { type: 'plain_text', text: 'Numéro de dossier' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : 3664' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'nom_dossier',
+          optional: true,
+          label: { type: 'plain_text', text: 'Nom du dossier serveur' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'ecoutant',
+          label: { type: 'plain_text', text: 'Écoutant en charge' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'canal',
+          label: { type: 'plain_text', text: "Canal d'arrivée" },
+          element: {
+            type: 'static_select',
+            action_id: 'valeur',
+            options: [
+              { text: { type: 'plain_text', text: '📞 Téléphone' }, value: 'telephone' },
+              { text: { type: 'plain_text', text: '💬 Tchat' }, value: 'tchat' },
+              { text: { type: 'plain_text', text: '📧 Mail' }, value: 'mail' },
+            ],
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'mail_contact',
+          optional: true,
+          label: { type: 'plain_text', text: 'Mail de contact de la victime' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'adresse@exemple.com' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'telephone',
+          optional: true,
+          label: { type: 'plain_text', text: 'Téléphone de contact' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : 06 12 34 56 78' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'cadres',
+          optional: true,
+          label: { type: 'plain_text', text: 'Cadre(s) informé(s)' },
+          element: {
+            type: 'multi_static_select',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Sélectionnez un ou plusieurs cadres' },
+            options: [
+              { text: { type: 'plain_text', text: 'Simon' }, value: 'Simon' },
+              { text: { type: 'plain_text', text: 'Diane' }, value: 'Diane' },
+              { text: { type: 'plain_text', text: 'Caroline' }, value: 'Caroline' },
+              { text: { type: 'plain_text', text: 'Pauline' }, value: 'Pauline' },
+              { text: { type: 'plain_text', text: 'Manu' }, value: 'Manu' },
+            ],
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'resume',
+          label: { type: 'plain_text', text: 'Type de situation (mots-clés)' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'valeur',
+            placeholder: { type: 'plain_text', text: 'Ex : harcèlement, mineur, réseaux sociaux' },
+          },
+        },
+      ],
+    },
   });
 });
 
