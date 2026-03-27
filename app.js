@@ -118,6 +118,27 @@ app.command('/signal', async ({ ack, body, client }) => {
   });
 });
 
+function extraireChamps(blocks) {
+  const titreBlock = blocks.find(b => b.text?.text?.includes('Dossier'));
+  const numero = (titreBlock?.text?.text?.match(/Dossier (\S+)\*/) || [])[1] || '';
+
+  const fieldsBlock = blocks.find(b => b.fields);
+  const fields = fieldsBlock?.fields || [];
+  const get = (label) => (fields.find(f => f.text.includes(label))?.text || '').split('\n')[1] || '';
+
+  const nomDossier = get('Nom dossier serveur');
+  const ecoutant = get('Écoutant');
+  const canal = get('Canal');
+  const mail = get('Mail contact');
+  const telephone = get('Téléphone');
+  const cadres = get('Cadre');
+
+  const resumeBlock = blocks.find(b => b.text?.text?.includes('Type de situation'));
+  const resume = (resumeBlock?.text?.text || '').split('\n')[1] || '';
+
+  return { numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume };
+}
+
 app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   await ack();
 
@@ -140,93 +161,7 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   const message = await client.chat.postMessage({
     channel: channelId,
     text: `Nouveau dossier ${numero}`,
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `🗂️ *Dossier ${numero}*\n*Statut :* 🟡 Ouvert — dossier ouvert, en cours de rédaction`,
-        },
-      },
-      { type: 'divider' },
-      {
-        type: 'section',
-        fields: [
-          { type: 'mrkdwn', text: `*Nom dossier serveur :*\n${nomDossier}` },
-          { type: 'mrkdwn', text: `*Écoutant :*\n${ecoutant}` },
-          { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
-          { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
-          { type: 'mrkdwn', text: `*Téléphone :*\n${telephone}` },
-          { type: 'mrkdwn', text: `*Cadre(s) informé(s) :*\n${cadres}` },
-          { type: 'mrkdwn', text: `*Ouvert le :*\n${now}` },
-        ],
-      },
-      {
-        type: 'section',
-        text: { type: 'mrkdwn', text: `*Type de situation :*\n${resume}` },
-      },
-      { type: 'divider' },
-      {
-        type: 'actions',
-        block_id: 'actions_statut',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '🟡 En cours' },
-            action_id: 'statut_ouvert',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '🟣 À valider' },
-            action_id: 'statut_a_valider',
-          },
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '🟢 Envoyé' },
-            action_id: 'statut_envoye',
-          },
-        ],
-      },
-      {
-        type: 'actions',
-        block_id: 'actions_fds',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '⏳ En attente FDS' },
-            action_id: 'tag_fds',
-          },
-        ],
-      },
-      {
-        type: 'actions',
-        block_id: 'actions_rappel',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '+ Rappel' },
-            action_id: 'tag_rappel_ajouter',
-          },
-        ],
-      },
-      {
-        type: 'actions',
-        block_id: 'actions_modifier',
-        elements: [
-          {
-            type: 'button',
-            text: { type: 'plain_text', text: '✏️ Modifier le mail' },
-            action_id: 'modifier_mail',
-          },
-        ],
-      },
-      {
-        type: 'context',
-        elements: [
-          { type: 'mrkdwn', text: `Dossier ouvert par <@${user}>` },
-        ],
-      },
-    ],
+    blocks: buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume, user, now }),
   });
 
   await client.pins.add({
@@ -235,327 +170,69 @@ app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
   });
 });
 
-const statuts = {
-  statut_ouvert:    { emoji: '🟡', texte: 'Ouvert — dossier ouvert, en cours de rédaction' },
-  statut_a_valider: { emoji: '🟣', texte: 'À valider — dossier constitué, en relecture dirco' },
-  statut_envoye:    { emoji: '🟢', texte: 'Envoyé — dossier transmis au destinataire, cas clôturé' },
-};
-
-Object.entries(statuts).forEach(([actionId, statut]) => {
-  app.action(actionId, async ({ ack, body, client }) => {
-    await ack();
-    const message = body.message;
-
-    const updatedBlocks = message.blocks.map((block) => {
-      if (block.type === 'section' && block.text?.text?.includes('Statut :')) {
-        return {
-          ...block,
-          text: {
-            ...block.text,
-            text: block.text.text.replace(
-              /\*Statut :\*.*/,
-              `*Statut :* ${statut.emoji} ${statut.texte}`
-            ),
-          },
-        };
-      }
-      return block;
-    });
-
-    await client.chat.update({
-      channel: body.channel.id,
-      ts: message.ts,
-      blocks: updatedBlocks,
-      text: message.text,
-    });
-
-    if (actionId === 'statut_envoye') {
-      try { await client.pins.remove({ channel: body.channel.id, timestamp: message.ts }); } catch (e) {}
-    } else {
-      try { await client.pins.add({ channel: body.channel.id, timestamp: message.ts }); } catch (e) {}
-    }
-  });
-});
-
-app.action('tag_fds', async ({ ack, body, client }) => {
-  await ack();
-  const message = body.message;
-
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_fds') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_fds') {
-            const isAttendu = el.text.text.includes('attente');
-            return {
-              ...el,
-              text: { type: 'plain_text', text: isAttendu ? '✅ FDS reçu' : '⏳ En attente FDS' },
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
-
-  await client.chat.update({
-    channel: body.channel.id,
-    ts: message.ts,
-    blocks: updatedBlocks,
-    text: message.text,
-  });
-});
-
-app.action('tag_rappel_ajouter', async ({ ack, body, client }) => {
-  await ack();
-  const message = body.message;
-
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_rappel') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_rappel_ajouter') {
-            return {
-              ...el,
-              text: { type: 'plain_text', text: '📞 Rappel à faire' },
-              action_id: 'tag_rappel',
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
-
-  await client.chat.update({
-    channel: body.channel.id,
-    ts: message.ts,
-    blocks: updatedBlocks,
-    text: message.text,
-  });
-});
-
-app.action('tag_rappel', async ({ ack, body, client }) => {
-  await ack();
-  const message = body.message;
-
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.block_id === 'actions_rappel') {
-      return {
-        ...block,
-        elements: block.elements.map((el) => {
-          if (el.action_id === 'tag_rappel') {
-            const isFaire = el.text.text.includes('faire');
-            return {
-              ...el,
-              text: { type: 'plain_text', text: isFaire ? '✅ Rappel fait' : '📞 Rappel à faire' },
-            };
-          }
-          return el;
-        }),
-      };
-    }
-    return block;
-  });
-
-  await client.chat.update({
-    channel: body.channel.id,
-    ts: message.ts,
-    blocks: updatedBlocks,
-    text: message.text,
-  });
-});
-
-app.action('modifier_mail', async ({ ack, body, client }) => {
-  await ack();
-
-  const message = body.message;
-  const channelId = body.channel.id;
-  const messageTs = message.ts;
-
-  const champsBlock = message.blocks.find(b => b.fields);
-  const mailActuel = champsBlock?.fields?.find(f => f.text.includes('Mail contact'))?.text
-    .replace('*Mail contact :*\n', '') || '';
-
-  await client.views.open({
-    trigger_id: body.trigger_id,
-    view: {
-      type: 'modal',
-      callback_id: 'modifier_mail_submit',
-      private_metadata: JSON.stringify({ channelId, messageTs }),
-      title: { type: 'plain_text', text: 'Modifier le mail' },
-      submit: { type: 'plain_text', text: 'Mettre à jour' },
-      close: { type: 'plain_text', text: 'Annuler' },
-      blocks: [
+function buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume, user, now }) {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `🗂️ *Dossier ${numero}*\n*Statut :* 🟡 Ouvert — dossier ouvert, en cours de rédaction`,
+      },
+    },
+    { type: 'divider' },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Nom dossier serveur :*\n${nomDossier}` },
+        { type: 'mrkdwn', text: `*Écoutant :*\n${ecoutant}` },
+        { type: 'mrkdwn', text: `*Canal :*\n${canal}` },
+        { type: 'mrkdwn', text: `*Mail contact :*\n${mail}` },
+        { type: 'mrkdwn', text: `*Téléphone :*\n${telephone}` },
+        { type: 'mrkdwn', text: `*Cadre(s) informé(s) :*\n${cadres}` },
+        { type: 'mrkdwn', text: `*Ouvert le :*\n${now}` },
+      ],
+    },
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Type de situation :*\n${resume}` },
+    },
+    { type: 'divider' },
+    {
+      type: 'actions',
+      block_id: 'actions_statut',
+      elements: [
         {
-          type: 'input',
-          block_id: 'nouveau_mail',
-          label: { type: 'plain_text', text: 'Mail de contact de la victime' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            initial_value: mailActuel === 'Non renseigné' ? '' : mailActuel,
-            placeholder: { type: 'plain_text', text: 'adresse@exemple.com' },
-          },
+          type: 'button',
+          text: { type: 'plain_text', text: '🟡 En cours' },
+          action_id: 'statut_ouvert',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🟣 À valider' },
+          action_id: 'statut_a_valider',
+        },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🟢 Envoyé' },
+          action_id: 'statut_envoye',
         },
       ],
     },
-  });
-});
-
-app.view('modifier_mail_submit', async ({ ack, body, view, client }) => {
-  await ack();
-
-  const { channelId, messageTs } = JSON.parse(view.private_metadata);
-  const nouveauMail = view.state.values.nouveau_mail.valeur.value || 'Non renseigné';
-
-  const result = await client.conversations.history({
-    channel: channelId,
-    latest: messageTs,
-    limit: 1,
-    inclusive: true,
-  });
-
-  const message = result.messages[0];
-
-  const updatedBlocks = message.blocks.map((block) => {
-    if (block.fields) {
-      return {
-        ...block,
-        fields: block.fields.map((field) => {
-          if (field.text.includes('Mail contact')) {
-            return { ...field, text: `*Mail contact :*\n${nouveauMail}` };
-          }
-          return field;
-        }),
-      };
-    }
-    return block;
-  });
-
-  await client.chat.update({
-    channel: channelId,
-    ts: messageTs,
-    blocks: updatedBlocks,
-    text: message.text,
-  });
-});
-
-app.shortcut('nouveau_signalement', async ({ ack, shortcut, client }) => {
-  await ack();
-  await client.views.open({
-    trigger_id: shortcut.trigger_id,
-    view: {
-      type: 'modal',
-      callback_id: 'nouveau_dossier',
-      title: { type: 'plain_text', text: 'Nouveau signalement' },
-      submit: { type: 'plain_text', text: 'Créer le dossier' },
-      close: { type: 'plain_text', text: 'Annuler' },
-      blocks: [
+    {
+      type: 'actions',
+      block_id: 'actions_fds',
+      elements: [
         {
-          type: 'input',
-          block_id: 'numero_dossier',
-          label: { type: 'plain_text', text: 'Numéro de dossier' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 3664' },
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'nom_dossier',
-          optional: true,
-          label: { type: 'plain_text', text: 'Nom du dossier serveur' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'ecoutant',
-          label: { type: 'plain_text', text: 'Écoutant en charge' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'canal',
-          label: { type: 'plain_text', text: "Canal d'arrivée" },
-          element: {
-            type: 'static_select',
-            action_id: 'valeur',
-            options: [
-              { text: { type: 'plain_text', text: '📞 Téléphone' }, value: 'telephone' },
-              { text: { type: 'plain_text', text: '💬 Tchat' }, value: 'tchat' },
-              { text: { type: 'plain_text', text: '📧 Mail' }, value: 'mail' },
-            ],
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'mail_contact',
-          optional: true,
-          label: { type: 'plain_text', text: 'Mail de contact de la victime' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'adresse@exemple.com' },
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'telephone',
-          optional: true,
-          label: { type: 'plain_text', text: 'Téléphone de contact' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 06 12 34 56 78' },
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'cadres',
-          optional: true,
-          label: { type: 'plain_text', text: 'Cadre(s) informé(s)' },
-          element: {
-            type: 'multi_static_select',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Sélectionnez un ou plusieurs cadres' },
-            options: [
-              { text: { type: 'plain_text', text: 'Simon' }, value: 'Simon' },
-              { text: { type: 'plain_text', text: 'Diane' }, value: 'Diane' },
-              { text: { type: 'plain_text', text: 'Caroline' }, value: 'Caroline' },
-              { text: { type: 'plain_text', text: 'Pauline' }, value: 'Pauline' },
-              { text: { type: 'plain_text', text: 'Manu' }, value: 'Manu' },
-            ],
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'resume',
-          label: { type: 'plain_text', text: 'Type de situation (mots-clés)' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : harcèlement, mineur, réseaux sociaux' },
-          },
+          type: 'button',
+          text: { type: 'plain_text', text: '⏳ En attente FDS' },
+          action_id: 'tag_fds',
         },
       ],
     },
-  });
-});
-
-(async () => {
-  await app.start(process.env.PORT || 3000);
-  console.log('⚡️ Bot 3018 démarré');
-})();
+    {
+      type: 'actions',
+      block_id: 'actions_rappel',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', tex
