@@ -124,19 +124,21 @@ function extraireChamps(blocks) {
 
   const fieldsBlock = blocks.find(b => b.fields);
   const fields = fieldsBlock?.fields || [];
-  const get = (label) => (fields.find(f => f.text.includes(label))?.text || '').split('\n')[1] || '';
+  const get = (label) => {
+    const field = fields.find(f => f.text.startsWith(`*${label}`));
+    return (field?.text || '').split('\n')[1] || '';
+  };
 
   const nomDossier = get('Nom dossier serveur');
   const ecoutant = get('Écoutant');
-  const canal = get('Canal');
   const mail = get('Mail contact');
   const telephone = get('Téléphone');
-  const cadres = get('Cadre');
+  const cadres = get('Cadre(s) informé(s)');
 
   const resumeBlock = blocks.find(b => b.text?.text?.includes('Type de situation'));
   const resume = (resumeBlock?.text?.text || '').split('\n')[1] || '';
 
-  return { numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume };
+  return { numero, nomDossier, ecoutant, mail, telephone, cadres, resume };
 }
 
 app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
