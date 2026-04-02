@@ -141,37 +141,6 @@ function extraireChamps(blocks) {
   return { numero, nomDossier, ecoutant, mail, telephone, cadres, resume };
 }
 
-app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
-  await ack();
-
-  const vals = view.state.values;
-  const numero = vals.numero_dossier.valeur.value;
-  const nomDossier = vals.nom_dossier.valeur.value || 'Non renseigné';
-  const ecoutant = vals.ecoutant.valeur.value;
-  const canal = vals.canal.valeur.selected_option.text.text;
-  const mail = vals.mail_contact.valeur.value || 'Non renseigné';
-  const telephone = vals.telephone.valeur.value || 'Non renseigné';
-  const cadresRaw = vals.cadres.valeur.selected_options;
-  const cadres = cadresRaw && cadresRaw.length > 0
-    ? cadresRaw.map(o => o.value).join(', ')
-    : 'Non renseigné';
-  const resume = vals.resume.valeur.value;
-  const user = body.user.id;
-  const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
-  const channelId = process.env.SLACK_CHANNEL_ID;
-
-  const message = await client.chat.postMessage({
-    channel: channelId,
-    text: `Nouveau dossier ${numero}`,
-    blocks: buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume, user, now }),
-  });
-
-  await client.pins.add({
-    channel: channelId,
-    timestamp: message.ts,
-  });
-});
-
 function buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume, user, now }) {
   return [
     {
@@ -218,6 +187,11 @@ function buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone
           text: { type: 'plain_text', text: '🟢 Envoyé' },
           action_id: 'statut_envoye',
         },
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: '🔴 Abandonné' },
+          action_id: 'statut_abandonne',
+        },
       ],
     },
     {
@@ -226,8 +200,8 @@ function buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone
       elements: [
         {
           type: 'button',
-          text: { type: 'plain_text', text: '⏳ En attente FDS' },
-          action_id: 'tag_fds',
+          text: { type: 'plain_text', text: '+ En attente FDS' },
+          action_id: 'tag_fds_ajouter',
         },
       ],
     },
@@ -262,10 +236,42 @@ function buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone
   ];
 }
 
+app.view('nouveau_dossier', async ({ ack, body, view, client }) => {
+  await ack();
+
+  const vals = view.state.values;
+  const numero = vals.numero_dossier.valeur.value;
+  const nomDossier = vals.nom_dossier.valeur.value || 'Non renseigné';
+  const ecoutant = vals.ecoutant.valeur.value;
+  const canal = vals.canal.valeur.selected_option.text.text;
+  const mail = vals.mail_contact.valeur.value || 'Non renseigné';
+  const telephone = vals.telephone.valeur.value || 'Non renseigné';
+  const cadresRaw = vals.cadres.valeur.selected_options;
+  const cadres = cadresRaw && cadresRaw.length > 0
+    ? cadresRaw.map(o => o.value).join(', ')
+    : 'Non renseigné';
+  const resume = vals.resume.valeur.value;
+  const user = body.user.id;
+  const now = new Date().toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+  const channelId = process.env.SLACK_CHANNEL_ID;
+
+  const message = await client.chat.postMessage({
+    channel: channelId,
+    text: `Nouveau dossier ${numero}`,
+    blocks: buildFicheBlocks({ numero, nomDossier, ecoutant, canal, mail, telephone, cadres, resume, user, now }),
+  });
+
+  await client.pins.add({
+    channel: channelId,
+    timestamp: message.ts,
+  });
+});
+
 const statuts = {
   statut_ouvert:    { emoji: '🟡', texte: 'Ouvert — dossier ouvert, en cours de rédaction' },
   statut_a_valider: { emoji: '🟣', texte: 'À valider — dossier constitué, en relecture dirco' },
   statut_envoye:    { emoji: '🟢', texte: 'Envoyé — dossier transmis au destinataire, cas clôturé' },
+  statut_abandonne: { emoji: '🔴', texte: 'Abandonné — informations insuffisantes' },
 };
 
 Object.entries(statuts).forEach(([actionId, statut]) => {
@@ -296,7 +302,7 @@ Object.entries(statuts).forEach(([actionId, statut]) => {
       text: message.text,
     });
 
-    if (actionId === 'statut_envoye') {
+    if (actionId === 'statut_envoye' || actionId === 'statut_abandonne') {
       try { await client.pins.remove({ channel: body.channel.id, timestamp: message.ts }); } catch (e) {}
     } else {
       try { await client.pins.add({ channel: body.channel.id, timestamp: message.ts }); } catch (e) {}
@@ -304,6 +310,46 @@ Object.entries(statuts).forEach(([actionId, statut]) => {
   });
 });
 
+// Bouton + En attente FDS — active le tag ET notifie le canal plateformes
+app.action('tag_fds_ajouter', async ({ ack, body, client }) => {
+  await ack();
+  const message = body.message;
+  const infos = extraireChamps(message.blocks);
+
+  const updatedBlocks = message.blocks.map((block) => {
+    if (block.block_id === 'actions_fds') {
+      return {
+        ...block,
+        elements: block.elements.map((el) => {
+          if (el.action_id === 'tag_fds_ajouter') {
+            return {
+              ...el,
+              text: { type: 'plain_text', text: '⏳ En attente FDS' },
+              action_id: 'tag_fds',
+            };
+          }
+          return el;
+        }),
+      };
+    }
+    return block;
+  });
+
+  await client.chat.update({
+    channel: body.channel.id,
+    ts: message.ts,
+    blocks: updatedBlocks,
+    text: message.text,
+  });
+
+  // Notification dans le canal plateformes
+  await client.chat.postMessage({
+    channel: process.env.SLACK_CHANNEL_PLATEFORMES,
+    text: `📋 *En attente d'un FDS*\n*Dossier :* ${infos.numero} — ${infos.resume}\n*Écoutant :* ${infos.ecoutant}\n*Mail de contact :* ${infos.mail}`,
+  });
+});
+
+// Tag FDS — bascule entre En attente et Reçu
 app.action('tag_fds', async ({ ack, body, client }) => {
   await ack();
   const message = body.message;
@@ -424,7 +470,7 @@ app.action('modifier_dossier', async ({ ack, body, client }) => {
             type: 'plain_text_input',
             action_id: 'valeur',
             initial_value: infos.nomDossier === 'Non renseigné' ? '' : infos.nomDossier,
-            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
+            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_NOM_1234' },
           },
         },
         {
@@ -566,7 +612,7 @@ app.shortcut('nouveau_signalement', async ({ ack, shortcut, client }) => {
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 3664' },
+            placeholder: { type: 'plain_text', text: 'Ex : 1234' },
           },
         },
         {
@@ -577,7 +623,7 @@ app.shortcut('nouveau_signalement', async ({ ack, shortcut, client }) => {
           element: {
             type: 'plain_text_input',
             action_id: 'valeur',
-            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_BISMUTH_00003664' },
+            placeholder: { type: 'plain_text', text: 'Ex : 2026_03_SP_NOM_1234' },
           },
         },
         {
